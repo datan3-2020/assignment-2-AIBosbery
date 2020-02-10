@@ -1,7 +1,7 @@
 ---
 title: "Data analysis assignment 2"
-author: "[add your name here]"
-date: "[add date here]"
+author: "Andrew Bosbery"
+date: "06/02/2020"
 output: github_document
 ---
 
@@ -24,9 +24,10 @@ We will work with three different tables: household roster from wave 8 (*h_egoal
 ```{r}
 library(tidyverse)
 # You need to complete the paths to these files on your computer.
-Egoalt8 <- read_tsv("...h_egoalt.tab")
-Stable <- read_tsv("...xwavedat.tab")
-Hh8 <- read_tsv("...h_hhresp.tab")
+
+Egoalt8 <- read_tsv("C:/Users/Andrew/Documents/University/Year 2/Term 2/Data Analysis 3/Project/data/UKDA-6614-tab/tab/ukhls_w8/h_egoalt.tab")
+Stable <- read_tsv("C:/Users/Andrew/Documents/University/Year 2/Term 2/Data Analysis 3/Project/data/UKDA-6614-tab/tab/ukhls_wx/xwavedat.tab")
+Hh8 <- read_tsv("C:/Users/Andrew/Documents/University/Year 2/Term 2/Data Analysis 3/Project/data/UKDA-6614-tab/tab/ukhls_w8/h_hhresp.tab")
 ```
 
 ## Filter household roster data (10 points)
@@ -37,8 +38,8 @@ First we want to select only pairs of individuals who are husbands and wives or 
 
 ```{r}
 Partners8 <- Egoalt8 %>%
-        filter(...) %>%
-        select(...)
+        filter(h_relationship_dv == 1 | h_relationship_dv == 2) %>%
+        select(pidp, apidp, h_hidp, h_relationship_dv, h_sex, h_asex)
 ```
 
 Each couple now appears in the data twice: 1) with one partner as ego and the other as alter, 2) the other way round. Now we will only focus on heterosexual couples, and keep one observation per couple with women as egos and men as their alters.
@@ -46,9 +47,9 @@ Each couple now appears in the data twice: 1) with one partner as ego and the ot
 ```{r}
 Hetero8 <- Partners8 %>%
         # filter out same-sex couples
-        filter(...) %>%
+        filter(h_sex != h_asex) %>%
         # keep only one observation per couple with women as egos
-        filter(...)
+        filter(h_sex == 2 & h_asex == 1)  #h_asex == 1 unnecessary but a good safeguard
 ```
 
 ## Recode data on ethnicity (10 points)
@@ -57,7 +58,7 @@ In this assignment we will explore ethnic endogamy, i.e. marriages and partnersh
 
 ```{r}
 Stable2 <- Stable %>%
-        select(...)
+        select(pidp, racel_dv)
 ```
 
 Let's code missing values on ethnicity (-9) as NA.
@@ -71,7 +72,11 @@ Now let us recode the variable on ethnicity into a new binary variable with the 
 
 ```{r}
 Stable2 <- Stable2 %>%
-        mutate(race = ...)
+        mutate(race = as.character(case_when(
+                between(racel_dv, 1, 4) ~ "white",
+                racel_dv > 4 ~ "non-white")))
+                
+        #NAs introduced by coercion
 ```
 
 ## Join data (30 points)
@@ -80,7 +85,8 @@ Now we want to join data from the household roster (*Hetero8*) and the data tabl
 
 ```{r}
 JoinedEthn <- Hetero8 %>%
-        ...
+        left_join(Stable2, by = "pidp")
+        
 ```
 
 Let us rename the variables for ethnicity to clearly indicate that they refer to egos.
@@ -95,7 +101,7 @@ Now let us merge in the data on alter's ethnicity. Note that in this case the ke
 
 ```{r}
 JoinedEthn <- JoinedEthn %>%
-        ...
+        left_join(Stable2, by = c("apidp" = "pidp"))
 ```
 
 Renaming the variables for alters.
@@ -113,8 +119,8 @@ Let us start by looking at the joint distribution of race (White vs. non-White) 
 ```{r}
 TableRace <- JoinedEthn %>%
         # filter out observations with missing data
-        filter(...) %>%
-        count(...)
+        filter(alterRace != is.na(alterRace) & egoRace != is.na(egoRace)) %>%
+        count(egoRace, alterRace)
 TableRace
 ```
 
@@ -126,11 +132,12 @@ Of course, you can simply calculate these numbers manually. However, the code wi
 ```{r}
 TableRace %>%
         # group by ego's race to calculate sums
-        group_by(...) %>%
+        group_by(egoRace) %>%
         # create a new variable with the total number of women by race
-        mutate(...) %>%
+        mutate(Female_Race_Total = sum(n)
+               ) %>%
         # create a new variable with the required probabilities 
-        mutate(...)
+        mutate(Alter_Race_Prob = (n/Female_Race_Total) * 100)
 ```
 
 ## Join with household data and calculate mean and median number of children by ethnic group (30 points)
@@ -141,4 +148,77 @@ TableRace %>%
 4) Write a short interpretation of your results. What could affect your findings?
 
 ```{r}
-...
+NKids_Households <- Hh8 %>% 
+        select(h_hidp, h_nkids_dv)
+#A table with only the identifier and the number of kids per household
+
+JoinedEthn <- JoinedEthn %>%
+        left_join(NKids_Households, by = "h_hidp")
+
+#adding the number of kids per household to the couples table
+
+
+```
+
+
+```{r}
+
+##Choosing only endogamous couples
+
+Same_Ethnic <- JoinedEthn %>%
+        filter(egoRace == alterRace) %>%
+        filter(egoRacel_dv == 1 | egoRacel_dv == 9 | egoRacel_dv == 10) #%>%
+        #filter(h_nkids_dv.x != is.na(h_nkids_dv.x))
+
+        
+
+```
+
+
+
+
+```{r}
+Couple_Table <- Same_Ethnic %>%
+        count(egoRacel_dv, h_nkids_dv)
+        
+
+        
+Couple_Table
+        
+
+```
+
+
+
+
+
+```{r}
+Couple_Table %>%
+      mutate(weightedkids = n * h_nkids_dv) %>%
+      mutate(totalcouplesrace = case_when(
+         egoRacel_dv == 1 ~ sum(n[egoRacel_dv == 1]),
+         egoRacel_dv == 9 ~ sum(n[egoRacel_dv == 9]),
+         egoRacel_dv == 10 ~sum(n[egoRacel_dv == 10])
+      )) %>%
+       mutate(avergaekids = case_when( 
+        egoRacel_dv == 1 ~  sum(weightedkids[egoRacel_dv == 1], na.rm = TRUE)/totalcouplesrace,
+        egoRacel_dv == 9 ~  sum(weightedkids[egoRacel_dv == 9], na.rm = TRUE)/totalcouplesrace,
+        egoRacel_dv == 10 ~  sum(weightedkids[egoRacel_dv == 10], na.rm = TRUE)/totalcouplesrace
+        
+        
+        
+        )
+        
+
+       )
+                   
+     
+
+
+```
+
+On average white couples have 0.56 childern per household, Indian couples have 0.93 children per household and Pakistani couples have 1.70 children per household. This suggests that white British couples have less children than couples from these two ethnicities and Pakistani couples the most. Socio-economic factors could be a reason for this. This could be that many of the Pakistani and Indian couples have a less secure socio-economic position, they earn less money and do not have much in terms of savings. This could mean that these couples have more children to support them when they retire unlike the white couples who may have a relatively better off income and so do not need as many children to support them in the future. 
+
+Theses findings may be affected by many factors. One of these the is not controlling for age and professional status. This table does not account for the ages of participants or their professional status therefore it is possible this may be a confounding factor. For example, if an unrepresentative amount of the white British couples are young professionals and Indian and Pakistani couples and unrepresentively older with only working than this could explain why white British couples have on average less children than their Indian and Pakistani counterparts. This is because two young professionals may have less time to run a family than an older couple one of whom will be free to look after the kids. If this was accounted for there may have been a smaller difference in the average amount of children at different ages or professional status. 
+
+
